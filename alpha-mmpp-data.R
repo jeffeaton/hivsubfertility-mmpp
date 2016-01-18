@@ -174,6 +174,9 @@ epis <- merge(epis, Qlist.mm)
 epis.hivp <- subset(epis, hivst != "HIV-")
 epis.hivp$type[epis.hivp$type %in% c("entry", "exit")] <- "cens"
 epis.hivp <- split(epis.hivp, epis.hivp$id)
+epis.hivp <- epis.hivp[order(epis.hivp$site, epis.hivp$id, epis.hivp$startage),]
+epis.hivp$last <- FALSE
+epis.hivp$last[cumsum(aggregate(type~site+id, epis.hivp, NROW)$type)] <- TRUE  # flag last episode for each individual (relies on order)
 
 epis.hivn <- subset(epis, hivst == "HIV-")
 dat.hivn <- Reduce(merge, list(aggregate(dur ~ Qidx, epis.hivn, sum),

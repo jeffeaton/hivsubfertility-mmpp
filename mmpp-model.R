@@ -37,17 +37,17 @@ createQobj <- function(alpha, rho, lambda, sigma, pi0, mu){
 
   Qe <- eigen(Q, symmetric=FALSE)
 
-  Emat <- list(birth    = diag(alpha * c(1, rho)),
-               death    = diag(mu),
-               lastneg  = diag(c(1, rep(0, NS-1))),
-               firstpos = diag(c(0, rep(1, NS-1))),
-               cens     = diag(NS))
+  diagEmat <- list(birth    = alpha * c(1, rho),
+                   death    = mu,
+                   lastneg  = c(1, rep(0, NS-1)),
+                   firstpos = c(0, rep(1, NS-1)),
+                   cens     = rep(1, NS))
 
-  list(Q       = Q,
-       eigvalQ = Qe$values,
-       V       = Qe$vectors,
-       Vinv    = solve(Qe$vectors),
-       Emat    = Emat)
+  list(Q        = Q,
+       eigvalQ  = Qe$values,
+       V        = Qe$vectors,
+       Vinv     = solve(Qe$vectors),
+       diagEmat = diagEmat)
 }
 
 
@@ -69,14 +69,13 @@ ll <- function(par, epis.hivp, dat.hivn, epis.entry){
                     createQobj(ifelse(Qlist.mm[i,"fertelig"], alpha[aidx], 0),
                                frr.age[aidx]*frr.stage, lambda[aidx], sigma, pi0, mu)})
   
-  ll.hivn(dat.hivn, Qlist) + sum(sapply(epis.hivp, ll.hivp, Qlist)) - log.pentry(epis.entry, Qlist)
+  ll.hivn(dat.hivn, Qlist) + ll.hivp(epis.hivp, Qlist) - log.pentry(epis.entry, Qlist)
 }
 
 ll.hivn <- function(dat.hivn, Qlist){
   q.hivn <- sapply(Qlist, function(x) x$Q[1])
-  logrho.hivn <- log(sapply(Qlist, function(x) x$Emat$birth[1]))
-  logmu.hivn <- log(sapply(Qlist, function(x) x$Emat$death[1]))
-  ## logmu.hivn <- replace(logmu.hivn, logmu.hivn == -Inf, -1e6)
+  logrho.hivn <- log(sapply(Qlist, function(x) x$diagEmat$birth[1]))
+  logmu.hivn <- log(sapply(Qlist, function(x) x$diagEmat$death[1]))
 
   ll.hivn <- sum(q.hivn[dat.hivn$Qidx] * dat.hivn$dur) +
     sum(replace(logrho.hivn[dat.hivn$Qidx] * dat.hivn$births, dat.hivn$births==0, 0)) +
@@ -85,20 +84,27 @@ ll.hivn <- function(dat.hivn, Qlist){
   return(ll.hivn)
 }
 
-ll.hivp <- function(e, Qlist){
+ll.hivp <- function(epis.hivp, Qlist){
 
-  Qidx <- e[["Qidx"]]
-  dur <- e[["dur"]]
-  type <- e[["type"]]
+  Qidx <- epis.hivp[["Qidx"]]
+  dur <- epis.hivp[["dur"]]
+  type <- epis.hivp[["type"]]
+  last <- epis.hivp[["last"]]
 
-  forwp.t <- c(1, rep(0, NS-1))  # forward probabilities at time t.
-  for(ii in 1:nrow(e)){
+  forwp.t0 <- c(1, rep(0, NS-1))  # forward probabilities at time t0.
+
+  ll.hivp <- 0
+  forwp.t <- forwp.t0
+  for(ii in 1:nrow(epis.hivp)){
     Qobj <- Qlist[[Qidx[ii]]]
-    forwp.t <- forwp.t %*%
-      eAt.eigdec(dur[ii], Qobj[["eigvalQ"]], Qobj[["V"]], Qobj[["Vinv"]]) %*%
-      Qobj[["Emat"]][[type[ii]]]
+    ## next line: forwp.t <- forwp.t %*% (V %*% exp(t*eigval) %*% Vinv) %*% Emat; omitting eAt.eigdec() for slight efficiency
+    forwp.t <- ((forwp.t %*% Qobj[["V"]]) * exp(dur[ii] * Qobj[["eigvalQ"]])) %*% Qobj[["Vinv"]] * Qobj[["diagEmat"]][[type[ii]]]
+    if(last[ii]){
+      ll.hivp <- ll.hivp + log(sum(forwp.t))
+      forwp.t <- forwp.t0
+    }
   }
-  return(log(sum(forwp.t)))
+  return(ll.hivp)
 }
 
 log.pentry <- function(epis.entry, Qlist){

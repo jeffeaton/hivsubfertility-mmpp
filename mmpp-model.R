@@ -117,7 +117,8 @@ log.pentry <- function(epis.entry, Qlist){
   lpentry <- 0
   for(ii in 1:nrow(epis.entry)){
     Qobj <- Qlist[[Qidx[ii]]]
-    psurv <- psurv %*% eAt.eigdec(dur[ii], Qobj[["eigvalQ"]], Qobj[["V"]], Qobj[["Vinv"]])
+    ## psurv <- psurv %*% eAt.eigdec(dur[ii], Qobj[["eigvalQ"]], Qobj[["V"]], Qobj[["Vinv"]])
+    psurv <- ((psurv %*% Qobj[["V"]]) * exp(dur[ii] * Qobj[["eigvalQ"]])) %*% Qobj[["Vinv"]]
     if(entry[ii])
       lpentry <- lpentry + log(sum(psurv))
   }
